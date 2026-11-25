@@ -1,0 +1,1943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Rocket Head Dash | 自动上升火箭头控躲避</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --target-size: 28px;
+      --bg-space: #030712;
+      --cyan: #22d3ee;
+      --cyan-soft: #67e8f9;
+      --amber: #facc15;
+      --orange: #f97316;
+      --surface: rgba(15, 23, 42, 0.84);
+      --border: rgba(148, 163, 184, 0.35);
+    }
+    @media (pointer: coarse) {
+      :root {
+        --target-size: 44px;
+      }
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    html, body {
+      inline-size: 100%;
+      block-size: 100%;
+      background: var(--bg-space);
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow-wrap: break-word;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-block-size: 100dvh;
+    }
+    .visually-hidden:where(:not(:focus-within, :active)) {
+      position: absolute !important;
+      clip-path: inset(50%) !important;
+      overflow: hidden !important;
+      width: 1px !important;
+      height: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      white-space: nowrap !important;
+    }
+    :where(button, a, [tabindex]):focus-visible {
+      outline: 2.5px solid var(--cyan-soft);
+      outline-offset: 3px;
+    }
+    :where(button) {
+      min-block-size: var(--target-size);
+      min-inline-size: var(--target-size);
+      font: inherit;
+      transition: transform 140ms ease-out, box-shadow 140ms ease-out, background-color 140ms ease-out;
+    }
+    :where(button):hover {
+      box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+    }
+    :where(button):active {
+      transform: scale(0.96);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      :where(button) {
+        transition: none;
+      }
+      :where(button):active {
+        transform: none;
+      }
+    }
+
+    main#gameContainer {
+      position: relative;
+      inline-size: 100%;
+      max-inline-size: 480px;
+      block-size: 100dvh;
+      max-block-size: 100dvh;
+      background: var(--bg-space);
+      overflow: hidden;
+      box-shadow: 0 0 64px rgba(0, 0, 0, 0.9);
+    }
+
+    canvas#gameCanvas {
+      display: block;
+      inline-size: 100%;
+      block-size: 100%;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      cursor: grab;
+    }
+    canvas#gameCanvas.dragging {
+      cursor: grabbing;
+    }
+
+    /* Top Mode Pill & Controls */
+    .top-controls {
+      position: absolute;
+      inset-block-start: max(12px, env(safe-area-inset-top, 0px));
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-inline-size: calc(100% - 24px);
+    }
+    .mode-pill {
+      background: var(--surface);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1.5px solid var(--border);
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .mode-pill[aria-pressed="true"] {
+      background: rgba(8, 51, 68, 0.9);
+      border-color: var(--cyan);
+      color: var(--cyan-soft);
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+    }
+    .mode-pill.loading {
+      border-color: var(--amber);
+      color: #fef08a;
+    }
+
+    /* In-game HUD */
+    .hud {
+      position: absolute;
+      inset-block-start: 0;
+      inset-inline: 0;
+      padding: calc(max(12px, env(safe-area-inset-top, 0px)) + 44px)
+               max(16px, env(safe-area-inset-right, 0px))
+               8px
+               max(16px, env(safe-area-inset-left, 0px));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 12;
+    }
+    .hud[hidden] {
+      display: none;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .hud-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .hud-alt {
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.05;
+      color: #fff;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75);
+    }
+    .hud-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #e2e8f0;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 3px 10px;
+      border-radius: 999px;
+      inline-size: fit-content;
+    }
+    .hud-stars {
+      font-size: 16px;
+      font-weight: 900;
+      color: #fef08a;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(250, 204, 21, 0.45);
+      padding: 5px 12px;
+      border-radius: 999px;
+    }
+
+    /* Minimalist Real-Time Steer Gauge: ◀ ——●—— ▶ */
+    .steer-gauge {
+      align-self: center;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.76);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 5px 12px;
+      border-radius: 999px;
+    }
+    .steer-arrow {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 900;
+    }
+    .steer-track {
+      position: relative;
+      inline-size: 132px;
+      block-size: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.25);
+    }
+    .steer-center-tick {
+      position: absolute;
+      inset-inline-start: 50%;
+      inset-block-start: -3px;
+      inline-size: 2px;
+      block-size: 12px;
+      transform: translateX(-50%);
+      background: rgba(226, 232, 240, 0.8);
+      border-radius: 2px;
+    }
+    .steer-knob {
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-start: 50%;
+      inline-size: 14px;
+      block-size: 14px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+      transform: translate(-50%, -50%);
+    }
+
+    /* Bottom Shield Pill */
+    .bottom-hud {
+      position: absolute;
+      inset-block-end: max(16px, env(safe-area-inset-bottom, 0px));
+      inset-inline: 0;
+      display: flex;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 14;
+      padding-inline: 16px;
+    }
+    .bottom-hud[hidden] {
+      display: none;
+    }
+    .shield-btn {
+      pointer-events: auto;
+      position: relative;
+      overflow: hidden;
+      min-inline-size: 210px;
+      padding: 10px 20px;
+      border-radius: 999px;
+      border: 1.5px solid rgba(148, 163, 184, 0.45);
+      background: rgba(15, 23, 42, 0.82);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .shield-btn.ready {
+      border-color: var(--cyan);
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+    }
+    .shield-fill {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-start: 0;
+      inline-size: var(--charge, 100%);
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.45), rgba(34, 211, 238, 0.65));
+      pointer-events: none;
+    }
+    .shield-text {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Top-right Camera PiP Card */
+    .face-pip-card {
+      position: absolute;
+      inset-block-start: calc(max(12px, env(safe-area-inset-top, 0px)) + 98px);
+      inset-inline-end: max(12px, env(safe-area-inset-right, 0px));
+      inline-size: min(148px, 38vw);
+      background: rgba(6, 10, 20, 0.9);
+      border: 1.5px solid rgba(34, 211, 238, 0.65);
+      border-radius: 14px;
+      overflow: hidden;
+      z-index: 24;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+    }
+    .face-pip-card[hidden] {
+      display: none;
+    }
+    .face-pip-canvas {
+      display: block;
+      inline-size: 100%;
+      aspect-ratio: 1 / 1;
+      background: #020617;
+      cursor: pointer;
+    }
+    .face-pip-canvas.collapsed {
+      display: none;
+    }
+    .face-pip-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px;
+      font-size: 11px;
+      color: #e2e8f0;
+      font-weight: 700;
+    }
+    .face-pip-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: space-between;
+    }
+    .pip-mini-btn {
+      flex: 1 1 auto;
+      background: rgba(34, 211, 238, 0.16);
+      border: 1px solid rgba(34, 211, 238, 0.48);
+      color: var(--cyan-soft);
+      border-radius: 8px;
+      padding: 3px 6px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Toast Notification (manual popover) */
+    .toast-region {
+      position: fixed;
+      inset-block-start: calc(max(12px, env(safe-area-inset-top, 0px)) + 52px);
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+      z-index: 40;
+      margin: 0;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(56, 189, 248, 0.65);
+      color: #e0f2fe;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      max-inline-size: min(92vw, 420px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    }
+    .toast-region:is(:popover-open, .\:popover-open) {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .toast-close {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Countdown Center Overlay */
+    .countdown-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.56);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 24px;
+      z-index: 18;
+      pointer-events: none;
+    }
+    .countdown-overlay[hidden] {
+      display: none;
+    }
+    .countdown-num {
+      font-size: 84px;
+      font-weight: 900;
+      color: var(--amber);
+      text-shadow: 0 0 28px rgba(250, 204, 21, 0.65);
+      line-height: 1;
+    }
+    .countdown-tip {
+      margin-block-start: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+      text-wrap: pretty;
+    }
+    .countdown-sub {
+      margin-block-start: 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+      text-wrap: pretty;
+    }
+
+    /* Native Modal Dialogs */
+    dialog.game-modal {
+      margin: auto;
+      inline-size: min(90vw, 390px);
+      max-block-size: 86dvh;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 22px;
+      background: rgba(7, 11, 25, 0.94);
+      color: #f8fafc;
+      padding: 24px 20px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    }
+    dialog.game-modal[open] {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    dialog.game-modal:modal {
+      overscroll-behavior: contain;
+    }
+    dialog.game-modal::backdrop {
+      background: rgba(3, 7, 18, 0.72);
+      backdrop-filter: blur(8px);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+    .modal-title {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-wrap: balance;
+      background: linear-gradient(135deg, #22d3ee, #f97316);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .modal-subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      text-wrap: pretty;
+      line-height: 1.5;
+    }
+    .primary-cta {
+      inline-size: 100%;
+      max-inline-size: 260px;
+      background: linear-gradient(135deg, #f97316, #ef4444);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 13px 22px;
+      font-size: 17px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(249, 115, 22, 0.45);
+    }
+    .secondary-cta {
+      inline-size: 100%;
+      max-inline-size: 260px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--cyan-soft);
+      border: 1.5px solid rgba(34, 211, 238, 0.55);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .guide-list {
+      list-style: none;
+      inline-size: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 12px 14px;
+      text-align: start;
+      font-size: 12.5px;
+      line-height: 1.65;
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stats-grid {
+      inline-size: 100%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { font-weight: 800; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <main id="gameContainer">
+    <canvas id="gameCanvas" aria-label="Rocket Head Dash 游戏画布"></canvas>
+
+    <!-- Live Announcer for screen readers -->
+    <div id="liveAnnouncer" class="visually-hidden" aria-live="polite"></div>
+
+    <!-- Top Control Mode Bar -->
+    <div class="top-controls">
+      <button class="mode-pill" id="faceToggleBtn" type="button" aria-pressed="false">📷 开启头控</button>
+      <button class="mode-pill" id="menuFallbackBtn" type="button" hidden>🚀 起飞菜单</button>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div class="hud" id="hud" hidden>
+      <div class="hud-row">
+        <div class="hud-left">
+          <div class="hud-alt" id="altDisplay">0m</div>
+          <div class="hud-meta" id="zoneMeta">☁ 对流层 · 1.0x</div>
+        </div>
+        <div class="hud-stars" id="starsDisplay">★ 0 · ⚡ 0</div>
+      </div>
+
+      <div class="steer-gauge" aria-hidden="true">
+        <span class="steer-arrow">◀</span>
+        <div class="steer-track">
+          <div class="steer-center-tick"></div>
+          <div class="steer-knob" id="steerKnob"></div>
+        </div>
+        <span class="steer-arrow">▶</span>
+      </div>
+    </div>
+
+    <!-- Bottom Shield Bar -->
+    <div class="bottom-hud" id="bottomHud" hidden>
+      <button class="shield-btn ready" id="shieldBtn" type="button">
+        <span class="shield-fill" id="shieldFill" style="--charge: 100%;"></span>
+        <span class="shield-text" id="shieldBtnText">😮 张嘴 / 空格开启护盾</span>
+      </button>
+    </div>
+
+    <!-- Camera PiP Preview -->
+    <video id="faceVideo" playsinline muted hidden></video>
+    <div class="face-pip-card" id="facePipCard" hidden>
+      <canvas class="face-pip-canvas" id="facePipCanvas" width="224" height="224" title="点击一键回中"></canvas>
+      <div class="face-pip-footer">
+        <span id="faceActionLabel">👀 找人脸</span>
+        <div class="face-pip-actions">
+          <button class="pip-mini-btn" id="faceCalibrateBtn" type="button" aria-label="重新校准头部零点">🎯回中</button>
+          <button class="pip-mini-btn" id="pipToggleVisBtn" type="button" aria-pressed="false" aria-label="折叠或展开相机小窗">收起</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-2-1 Countdown Overlay -->
+    <div class="countdown-overlay" id="countdownOverlay" hidden>
+      <div class="countdown-num" id="countdownNum">3</div>
+      <div class="countdown-tip" id="countdownTip">正在采样初始头姿...</div>
+      <div class="countdown-sub" id="countdownSub">保持坐姿或躺姿正视屏幕即可自动锁定零点</div>
+    </div>
+
+    <!-- Non-intrusive Manual Popover Toast -->
+    <div id="faceToast" class="toast-region" popover="manual" role="region" aria-label="提示消息">
+      <span id="faceToastText"></span>
+      <button type="button" class="toast-close" id="faceToastClose" popovertarget="faceToast" popovertargetaction="hide" aria-label="关闭提示">✕</button>
+    </div>
+
+    <!-- Start Screen Modal Dialog -->
+    <dialog class="game-modal" id="startDialog" closedby="any" aria-labelledby="startTitle">
+      <h1 class="modal-title" id="startTitle">Rocket Head Dash</h1>
+      <p class="modal-subtitle">自动上升火箭 · 1:1 连续头控躲避</p>
+      <form method="dialog" style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+        <button class="primary-cta" id="startBtn" value="launch" autofocus>🚀 点火起飞</button>
+        <button class="secondary-cta" id="startFaceBtn" type="button">📷 开启人脸头控并起飞</button>
+      </form>
+      <ul class="guide-list">
+        <li>🎯 <b>3-2-1 零点锚定</b>：倒计时采样 9 帧基准，坐躺都能玩</li>
+        <li>🧭 <b>连续滑移</b>：One-Euro 滤波，微偏 5° 轻移、15° 横切躲避</li>
+        <li>😮 <b>张嘴彩蛋</b>：护盾满能后张嘴触发无敌护盾 + 星币磁铁</li>
+        <li>👆 <b>触屏/键鼠</b>：单指拖动或 A/D / ←/→ 方向控制，空格开护盾</li>
+      </ul>
+    </dialog>
+
+    <!-- Game Over Modal Dialog -->
+    <dialog class="game-modal" id="gameOverDialog" closedby="any" aria-labelledby="gameOverTitle">
+      <h1 class="modal-title" id="gameOverTitle" style="background: linear-gradient(135deg, #f87171, #fb923c); -webkit-background-clip: text;">任务结束!</h1>
+      <p class="modal-subtitle">穿过大气层，下一次飞得更高！</p>
+      <div class="stats-grid">
+        <div class="stat-row"><span class="stat-label">本次积分</span><span class="stat-val" id="finalScore">0</span></div>
+        <div class="stat-row"><span class="stat-label">最高高度</span><span class="stat-val" id="finalAlt" style="color: #67e8f9;">0m</span></div>
+        <div class="stat-row"><span class="stat-label">星币 / 擦边</span><span class="stat-val" id="finalStars" style="color: #facc15;">★ 0 / ⚡ 0</span></div>
+        <div class="stat-row" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;"><span class="stat-label">历史最佳</span><span class="stat-val" id="bestScore" style="color: #4ade80;">0</span></div>
+      </div>
+      <form method="dialog" style="width: 100%; display: flex; justify-content: center;">
+        <button class="primary-cta" id="restartBtn" value="retry" autofocus>🚀 再次发射</button>
+      </form>
+    </dialog>
+  </main>
+
+<script>
+// Conditional popover polyfill fallback check for older browsers
+if (!Object.hasOwn(HTMLElement.prototype, 'popover')) {
+  import('https://unpkg.com/@oddbird/popover-polyfill@latest/dist/popover.min.js').catch(() => {});
+}
+
+// --- 1. Procedural Sound Synthesizer ---
+class SoundManager {
+  constructor() { this.ctx = null; }
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+  }
+  playTone(type, f1, f2, dur, vol = 0.2) {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f1, now);
+      if (f2 !== f1) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f2), now + dur);
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.008, now + dur);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (_) {}
+  }
+  playCountdown(isGo) {
+    if (isGo) this.playTone('triangle', 440, 1080, 0.32, 0.25);
+    else this.playTone('sine', 680, 680, 0.12, 0.18);
+  }
+  playStar(combo = 1) {
+    const mult = 1 + Math.min(8, combo - 1) * 0.05;
+    this.playTone('sine', 880 * mult, 1320 * mult, 0.16, 0.18);
+  }
+  playFuel() {
+    this.playTone('triangle', 523, 1046, 0.24, 0.22);
+  }
+  playGraze() {
+    this.playTone('sine', 1150, 2050, 0.12, 0.16);
+  }
+  playShield() {
+    this.playTone('triangle', 260, 960, 0.28, 0.24);
+  }
+  playShatter() {
+    this.playTone('sawtooth', 540, 180, 0.18, 0.2);
+  }
+  playZoneUp() {
+    this.playTone('triangle', 420, 980, 0.32, 0.2);
+  }
+  playCrash() {
+    this.playTone('square', 130, 30, 0.34, 0.3);
+  }
+}
+
+// --- 2. One-Euro Filter & Calibration Baseline Mapper ---
+class OneEuroFilter {
+  constructor(minCutoff = 1.2, beta = 0.045, dCutoff = 1.0) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+    this.reset();
+  }
+  reset() {
+    this.initialized = false;
+    this.lastTime = 0;
+    this.x = 0;
+    this.dx = 0;
+  }
+  alpha(cutoff, dt) {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  }
+  filter(val, timeSec) {
+    if (!this.initialized) {
+      this.initialized = true;
+      this.lastTime = timeSec;
+      this.x = val;
+      this.dx = 0;
+      return val;
+    }
+    const dt = Math.max(1 / 240, Math.min(0.25, timeSec - this.lastTime));
+    this.lastTime = timeSec;
+    const rawDx = (val - this.x) / dt;
+    this.dx += (rawDx - this.dx) * this.alpha(this.dCutoff, dt);
+    const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+    this.x += (val - this.x) * this.alpha(cutoff, dt);
+    return this.x;
+  }
+}
+
+// --- 3. Fair Wave Generator ---
+class FairWaveGenerator {
+  constructor() {
+    this.corridorCenterNorm = 0.5;
+    this.waveCounter = 0;
+  }
+  reset() {
+    this.corridorCenterNorm = 0.5;
+    this.waveCounter = 0;
+  }
+  generate(width, rocketWidth, spawnY, altitude, faceMode) {
+    this.waveCounter++;
+    const diffScale = faceMode ? 3600 : 2600;
+    const diff = Math.max(0, Math.min(1, altitude / diffScale));
+    const widthMult = Math.max(1.92, 2.65 - diff * 0.67);
+    const corridorWidth = rocketWidth * widthMult;
+    const halfCorridor = corridorWidth * 0.5;
+
+    const marginNorm = Math.max(0.14, Math.min(0.32, (halfCorridor + 12) / width));
+    const maxShift = faceMode ? 0.26 : 0.33;
+    const low = Math.max(marginNorm, this.corridorCenterNorm - maxShift);
+    const high = Math.min(1 - marginNorm, this.corridorCenterNorm + maxShift);
+
+    let nextCenter = low + Math.random() * Math.max(0.01, high - low);
+    if (Math.abs(nextCenter - this.corridorCenterNorm) < 0.06 && this.waveCounter > 1) {
+      const nudge = this.corridorCenterNorm > 0.5 ? -0.14 : 0.14;
+      nextCenter = Math.max(low, Math.min(high, this.corridorCenterNorm + nudge));
+    }
+    this.corridorCenterNorm = nextCenter;
+
+    const centerX = width * nextCenter;
+    const safeLeft = centerX - halfCorridor;
+    const safeRight = centerX + halfCorridor;
+    const edgePad = 12;
+    const baseR = Math.max(18, Math.min(40, rocketWidth * (0.4 + Math.random() * 0.18)));
+
+    const obstacles = [];
+    const collectibles = [];
+
+    const populateZone = (zL, zR) => {
+      const zw = zR - zL;
+      if (zw < baseR * 2.15) return;
+      if (diff > 0.12 && zw >= baseR * 3.4 && Math.random() < 0.28 + diff * 0.22) {
+        const r = Math.max(16, Math.min(30, rocketWidth * 0.36));
+        const minX = zL + r + 2;
+        const maxX = zR - r - 2;
+        if (maxX > minX + 10) {
+          const spd = (faceMode ? 65 : 92) * (0.7 + diff * 0.6);
+          obstacles.push({
+            kind: 'SATELLITE',
+            x: minX + Math.random() * (maxX - minX),
+            y: spawnY + (Math.random() - 0.5) * rocketWidth * 0.5,
+            r, minX, maxX,
+            vx: Math.random() < 0.5 ? spd : -spd,
+            speedScale: 1,
+            warningTimer: 0,
+            rot: Math.random() * Math.PI * 2,
+            rotSpd: (Math.random() - 0.5) * 1.4,
+            grazed: false
+          });
+        }
+        return;
+      }
+
+      const maxFit = Math.max(1, Math.min(2, Math.floor(zw / (baseR * 2.4))));
+      const count = (maxFit === 2 && Math.random() < 0.45 + diff * 0.35) ? 2 : 1;
+      const step = zw / count;
+      for (let i = 0; i < count; i++) {
+        const sl = zL + i * step;
+        const sr = sl + step;
+        const r = Math.min((sr - sl) * 0.44, baseR * (0.85 + Math.random() * 0.25));
+        if (r < 14) continue;
+        const minC = sl + r + 2;
+        const maxC = sr - r - 2;
+        if (maxC < minC) continue;
+        obstacles.push({
+          kind: 'ASTEROID',
+          x: minC + Math.random() * (maxC - minC),
+          y: spawnY + (Math.random() - 0.5) * rocketWidth * 0.7,
+          r, minX: 0, maxX: 0, vx: 0,
+          speedScale: 1,
+          warningTimer: 0,
+          rot: Math.random() * Math.PI * 2,
+          rotSpd: (Math.random() - 0.5) * 1.8,
+          grazed: false
+        });
+      }
+    };
+
+    populateZone(edgePad, safeLeft);
+    populateZone(safeRight, width - edgePad);
+
+    if (altitude >= 320 && this.waveCounter % 3 === 0) {
+      const meteorR = Math.max(14, Math.min(28, rocketWidth * 0.34));
+      const leftW = safeLeft - edgePad;
+      const rightW = (width - edgePad) - safeRight;
+      const zMin = leftW >= rightW ? edgePad + meteorR : safeRight + meteorR + 4;
+      const zMax = leftW >= rightW ? safeLeft - meteorR - 4 : width - edgePad - meteorR;
+      if (zMax > zMin) {
+        const mx = zMin + Math.random() * (zMax - zMin);
+        obstacles.push({
+          kind: 'WARNING_METEOR',
+          x: mx,
+          y: -meteorR * 2,
+          r: meteorR, minX: mx, maxX: mx, vx: 0,
+          speedScale: 2.25,
+          warningTimer: faceMode ? 1.25 : 1.05,
+          rot: 0, rotSpd: 0, grazed: false
+        });
+      }
+    }
+
+    const starR = Math.max(10, Math.min(18, rocketWidth * 0.22));
+    const bias = (Math.random() < 0.5 ? 1 : -1) * halfCorridor * 0.42;
+    const baseStarX = Math.max(safeLeft + starR, Math.min(safeRight - starR, centerX + bias));
+    const starCount = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < starCount; i++) {
+      const sx = Math.max(safeLeft + starR, Math.min(safeRight - starR, baseStarX + (i - 1) * bias * 0.2));
+      collectibles.push({
+        kind: 'STAR',
+        x: sx,
+        y: spawnY - i * rocketWidth * 0.65,
+        r: starR,
+        collected: false,
+        phase: i * 0.7
+      });
+    }
+    if (this.waveCounter % 4 === 0) {
+      const fuelR = Math.max(12, Math.min(20, rocketWidth * 0.26));
+      const fx = Math.max(safeLeft + fuelR, Math.min(safeRight - fuelR, centerX - bias * 0.85));
+      collectibles.push({
+        kind: 'FUEL',
+        x: fx,
+        y: spawnY - rocketWidth * 0.9,
+        r: fuelR,
+        collected: false,
+        phase: 1.2
+      });
+    }
+
+    return { obstacles, collectibles };
+  }
+}
+
+// --- 4. DOM Elements & State ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const sound = new SoundManager();
+const waveGen = new FairWaveGenerator();
+
+const startDialog = document.getElementById('startDialog');
+const gameOverDialog = document.getElementById('gameOverDialog');
+const startBtn = document.getElementById('startBtn');
+const startFaceBtn = document.getElementById('startFaceBtn');
+const restartBtn = document.getElementById('restartBtn');
+const hudEl = document.getElementById('hud');
+const bottomHudEl = document.getElementById('bottomHud');
+const altDisplay = document.getElementById('altDisplay');
+const zoneMeta = document.getElementById('zoneMeta');
+const starsDisplay = document.getElementById('starsDisplay');
+const steerKnob = document.getElementById('steerKnob');
+const shieldBtn = document.getElementById('shieldBtn');
+const shieldFill = document.getElementById('shieldFill');
+const shieldBtnText = document.getElementById('shieldBtnText');
+const countdownOverlay = document.getElementById('countdownOverlay');
+const countdownNum = document.getElementById('countdownNum');
+const countdownTip = document.getElementById('countdownTip');
+const countdownSub = document.getElementById('countdownSub');
+const liveAnnouncer = document.getElementById('liveAnnouncer');
+
+const faceToggleBtn = document.getElementById('faceToggleBtn');
+const menuFallbackBtn = document.getElementById('menuFallbackBtn');
+const facePipCard = document.getElementById('facePipCard');
+const facePipCanvas = document.getElementById('facePipCanvas');
+const facePipCtx = facePipCanvas.getContext('2d');
+const faceVideo = document.getElementById('faceVideo');
+const faceActionLabel = document.getElementById('faceActionLabel');
+const faceCalibrateBtn = document.getElementById('faceCalibrateBtn');
+const pipToggleVisBtn = document.getElementById('pipToggleVisBtn');
+const faceToast = document.getElementById('faceToast');
+const faceToastText = document.getElementById('faceToastText');
+
+let width = 0;
+let height = 0;
+let gameState = 'START';
+let faceModeEnabled = false;
+let altitude = 0;
+let score = 0;
+let stars = 0;
+let grazes = 0;
+let combo = 0;
+let bestScore = parseInt(localStorage.getItem('rocket_dash_best_score') || '0', 10);
+let worldSpeed = 240;
+let currentZone = 0;
+let shieldCharge = 100;
+let shieldActive = 0;
+let countdownTimer = 0;
+let lastCountdownDigit = 4;
+let distanceToWave = 140;
+let screenShake = 0;
+let zoneBannerText = '';
+let zoneBannerTimer = 0;
+
+let rocketWidth = 46;
+let rocketHeight = 76;
+let rocketX = 200;
+let rocketY = 500;
+let rocketRoll = 0;
+let headSteer = 0;
+let touchSteer = 0;
+let activeSteer = 0;
+let lastFrameMs = 0;
+
+let obstacles = [];
+let collectibles = [];
+let particles = [];
+let popups = [];
+
+const bgStars = Array.from({ length: 60 }, () => ({
+  x: Math.random(), y: Math.random(),
+  s: 1 + Math.random() * 2.2,
+  spd: 0.15 + Math.random() * 0.55,
+  ph: Math.random() * Math.PI * 2
+}));
+const bgClouds = Array.from({ length: 8 }, () => ({
+  x: Math.random(), y: Math.random(),
+  w: 0.22 + Math.random() * 0.22,
+  spd: 0.25 + Math.random() * 0.35,
+  a: 0.18 + Math.random() * 0.2
+}));
+
+function announce(msg) {
+  liveAnnouncer.textContent = msg;
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  faceToastText.textContent = msg;
+  try {
+    if (typeof faceToast.showPopover === 'function') {
+      faceToast.showPopover();
+    } else {
+      faceToast.hidden = false;
+    }
+  } catch (_) {
+    faceToast.hidden = false;
+  }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 4200);
+}
+function hideToast() {
+  try {
+    if (typeof faceToast.hidePopover === 'function') {
+      faceToast.hidePopover();
+    } else {
+      faceToast.hidden = true;
+    }
+  } catch (_) {
+    faceToast.hidden = true;
+  }
+}
+
+function resizeCanvas() {
+  const container = document.getElementById('gameContainer');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  width = container.clientWidth;
+  height = container.clientHeight;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  rocketWidth = Math.max(38, Math.min(54, width * 0.105));
+  rocketHeight = rocketWidth * 1.65;
+  rocketY = height * 0.78;
+  if (gameState === 'START') rocketX = width * 0.5;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// --- 5. Launch, Countdown Calibration & Game Loop ---
+function baseSpeed() {
+  const h = Math.max(640, height);
+  return faceModeEnabled ? h * 0.29 : h * 0.35;
+}
+function maxSpeed() {
+  const h = Math.max(640, height);
+  return faceModeEnabled ? h * 0.62 : h * 0.80;
+}
+
+function startLaunchSequence() {
+  sound.init();
+  menuFallbackBtn.hidden = true;
+  if (startDialog.open) startDialog.close();
+  if (gameOverDialog.open) gameOverDialog.close();
+
+  gameState = 'CALIBRATING';
+  altitude = 0;
+  score = 0;
+  stars = 0;
+  grazes = 0;
+  combo = 0;
+  currentZone = 0;
+  shieldCharge = 100;
+  shieldActive = 0;
+  screenShake = 0;
+  zoneBannerTimer = 0;
+  obstacles = [];
+  collectibles = [];
+  particles = [];
+  popups = [];
+  waveGen.reset();
+  headSteer = 0;
+  touchSteer = 0;
+  activeSteer = 0;
+  rocketX = width * 0.5;
+  rocketRoll = 0;
+
+  countdownTimer = faceModeEnabled ? 2.25 : 1.5;
+  lastCountdownDigit = 4;
+
+  if (faceModeEnabled) {
+    beginFaceCalibration();
+  }
+  hudEl.hidden = true;
+  bottomHudEl.hidden = true;
+  countdownOverlay.hidden = false;
+  announce('开始发射倒计时');
+}
+
+function launchPlay() {
+  gameState = 'PLAYING';
+  countdownOverlay.hidden = true;
+  hudEl.hidden = false;
+  bottomHudEl.hidden = false;
+  worldSpeed = baseSpeed();
+  distanceToWave = height * 0.18;
+  sound.playCountdown(true);
+  spawnBurst(rocketX, rocketY + rocketHeight * 0.45, '#f97316', 18);
+
+  if (faceModeEnabled) {
+    finalizeFaceCalibration();
+  }
+  spawnWave(-rocketWidth);
+  spawnWave(-height * 0.44);
+  announce('火箭发射升空');
+}
+
+function spawnWave(spawnY) {
+  const wave = waveGen.generate(width, rocketWidth, spawnY, altitude, faceModeEnabled);
+  obstacles.push(...wave.obstacles);
+  collectibles.push(...wave.collectibles);
+}
+
+function spawnBurst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 60 + Math.random() * 190;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd,
+      life: 0.45,
+      maxLife: 0.45,
+      r: 2.5 + Math.random() * 3.5,
+      color
+    });
+  }
+}
+
+function activateShield() {
+  if (gameState !== 'PLAYING') return;
+  if (shieldActive <= 0 && shieldCharge >= 100) {
+    shieldCharge = 0;
+    shieldActive = 3.8;
+    sound.playShield();
+    popups.push({ x: rocketX, y: rocketY - rocketHeight * 0.75, text: '🛡️ 等离子护盾!', color: '#22d3ee', life: 1.1 });
+    spawnBurst(rocketX, rocketY, '#22d3ee', 16);
+    announce('等离子护盾已启动');
+  }
+}
+
+function triggerGameOver() {
+  gameState = 'GAMEOVER';
+  screenShake = 14;
+  sound.playCrash();
+  spawnBurst(rocketX, rocketY, '#ef4444', 24);
+  spawnBurst(rocketX, rocketY, '#facc15', 14);
+  hudEl.hidden = true;
+  bottomHudEl.hidden = true;
+
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('rocket_dash_best_score', String(bestScore));
+  }
+  document.getElementById('finalScore').textContent = String(score);
+  document.getElementById('finalAlt').textContent = `${Math.floor(altitude)}m`;
+  document.getElementById('finalStars').textContent = `★ ${stars} / ⚡ ${grazes}`;
+  document.getElementById('bestScore').textContent = String(bestScore);
+  gameOverDialog.showModal();
+  announce(`任务结束，本次积分 ${score}`);
+}
+
+// --- 6. Input: Single-Finger Pointer Drag & Keyboard ---
+let pointerActive = false;
+let dragStartX = 0;
+let dragStartSteer = 0;
+const keysHeld = new Set();
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || gameState !== 'PLAYING' || faceModeEnabled) return;
+  pointerActive = true;
+  dragStartX = e.clientX;
+  dragStartSteer = touchSteer;
+  canvas.classList.add('dragging');
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!pointerActive || !canvas.hasPointerCapture(e.pointerId)) return;
+  const span = Math.max(110, width * 0.36);
+  touchSteer = Math.max(-1, Math.min(1, dragStartSteer + (e.clientX - dragStartX) / span));
+});
+
+canvas.addEventListener('lostpointercapture', () => {
+  pointerActive = false;
+  canvas.classList.remove('dragging');
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+    keysHeld.add('left');
+  } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+    keysHeld.add('right');
+  } else if (e.key === ' ' && gameState === 'PLAYING') {
+    e.preventDefault();
+    activateShield();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keysHeld.delete('left');
+  else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keysHeld.delete('right');
+});
+
+shieldBtn.addEventListener('click', activateShield);
+
+startDialog.addEventListener('close', () => {
+  const rv = startDialog.returnValue;
+  startDialog.returnValue = '';
+  if (rv === 'launch') startLaunchSequence();
+  else if (gameState === 'START') menuFallbackBtn.hidden = false;
+});
+
+gameOverDialog.addEventListener('close', () => {
+  const rv = gameOverDialog.returnValue;
+  gameOverDialog.returnValue = '';
+  if (rv === 'retry') startLaunchSequence();
+  else if (gameState === 'GAMEOVER') menuFallbackBtn.hidden = false;
+});
+
+menuFallbackBtn.addEventListener('click', () => {
+  menuFallbackBtn.hidden = true;
+  if (gameState === 'GAMEOVER') gameOverDialog.showModal();
+  else startDialog.showModal();
+});
+
+// Conditional light-dismiss fallback for browsers lacking closedby
+if (!('closedBy' in HTMLDialogElement.prototype)) {
+  const outside = (e, dlg) => {
+    const r = dlg.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  for (const dlg of [startDialog, gameOverDialog]) {
+    let pressedOut = false;
+    dlg.addEventListener('pointerdown', (e) => { pressedOut = outside(e, dlg); });
+    dlg.addEventListener('pointerup', (e) => { if (pressedOut && outside(e, dlg)) dlg.close(); });
+  }
+}
+
+startFaceBtn.addEventListener('click', async () => {
+  sound.init();
+  const ok = await enableFaceControl();
+  if (ok) startLaunchSequence();
+});
+
+// --- 7. MediaPipe FaceLandmarker + Continuous One-Euro Control ---
+const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const FACE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+
+let faceLandmarker = null;
+let faceStream = null;
+let faceLoopRaf = 0;
+let lastVideoTime = -1;
+const steerFilter = new OneEuroFilter(1.2, 0.045, 1.0);
+let calCount = 0;
+const CAL_TARGET = 9;
+let calDone = false;
+let calSum = { centerX: 0, yaw: 0, mouth: 0 };
+let baseline = { centerX: 0.5, yaw: 0, mouth: 0.05 };
+let mouthLatched = false;
+let lastMouthTriggerSec = -10;
+
+function beginFaceCalibration() {
+  calCount = 0;
+  calDone = false;
+  calSum = { centerX: 0, yaw: 0, mouth: 0 };
+  mouthLatched = false;
+  headSteer = 0;
+  steerFilter.reset();
+  faceActionLabel.textContent = '🎯 校准 0/9';
+}
+
+function finalizeFaceCalibration() {
+  if (!calDone && calCount > 0) {
+    baseline = {
+      centerX: calSum.centerX / calCount,
+      yaw: calSum.yaw / calCount,
+      mouth: calSum.mouth / calCount
+    };
+    calDone = true;
+    steerFilter.reset();
+  }
+}
+
+async function enableFaceControl() {
+  if (window.location.protocol === 'file:') {
+    showToast('请用本地 HTTP 服务（如 python3 -m http.server 8000）打开本页面以启用摄像头');
+    return false;
+  }
+  faceToggleBtn.disabled = true;
+  faceToggleBtn.classList.add('loading');
+  faceToggleBtn.textContent = '⏳ 加载人脸模型…';
+
+  try {
+    if (!faceLandmarker) {
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+      const fileset = await vision.FilesetResolver.forVisionTasks(FACE_WASM_URL);
+      const opts = (delegate) => ({
+        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
+        outputFaceBlendshapes: true,
+        runningMode: 'VIDEO',
+        numFaces: 1
+      });
+      try {
+        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, opts('GPU'));
+      } catch (_) {
+        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, opts('CPU'));
+      }
+    }
+
+    faceToggleBtn.textContent = '⏳ 打开前摄…';
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
+      audio: false
+    });
+    faceVideo.srcObject = faceStream;
+    await faceVideo.play();
+
+    faceModeEnabled = true;
+    beginFaceCalibration();
+    faceToggleBtn.classList.remove('loading');
+    faceToggleBtn.setAttribute('aria-pressed', 'true');
+    faceToggleBtn.textContent = '📷 头控中 · 切触屏';
+    facePipCard.hidden = false;
+    lastVideoTime = -1;
+    faceLoop();
+    showToast('已开启人脸头控！起飞倒计时将自动锁定基准姿势');
+    return true;
+  } catch (err) {
+    console.error(err);
+    disableFaceControl();
+    showToast('无法开启摄像头或模型，已保持触屏拖动模式');
+    return false;
+  } finally {
+    faceToggleBtn.disabled = false;
+  }
+}
+
+function disableFaceControl() {
+  faceModeEnabled = false;
+  if (faceLoopRaf) cancelAnimationFrame(faceLoopRaf);
+  faceLoopRaf = 0;
+  if (faceStream) {
+    faceStream.getTracks().forEach((t) => t.stop());
+    faceStream = null;
+  }
+  faceVideo.srcObject = null;
+  faceToggleBtn.classList.remove('loading');
+  faceToggleBtn.setAttribute('aria-pressed', 'false');
+  faceToggleBtn.textContent = '📷 开启头控';
+  facePipCard.hidden = true;
+}
+
+function faceLoop() {
+  if (!faceModeEnabled) return;
+  if (faceVideo.readyState >= 2 && faceVideo.currentTime !== lastVideoTime && faceLandmarker) {
+    lastVideoTime = faceVideo.currentTime;
+    const nowMs = performance.now();
+    const res = faceLandmarker.detectForVideo(faceVideo, nowMs);
+
+    const w = facePipCanvas.width;
+    const h = facePipCanvas.height;
+    facePipCtx.save();
+    facePipCtx.translate(w, 0);
+    facePipCtx.scale(-1, 1);
+    const vw = faceVideo.videoWidth || w;
+    const vh = faceVideo.videoHeight || h;
+    const side = Math.min(vw, vh);
+    const sx = (vw - side) / 2;
+    const sy = (vh - side) / 2;
+    facePipCtx.drawImage(faceVideo, sx, sy, side, side, 0, 0, w, h);
+    facePipCtx.restore();
+
+    if (res.faceLandmarks && res.faceLandmarks.length > 0) {
+      const face = res.faceLandmarks[0];
+      const mx = (pt) => 1 - pt.x;
+      const faceCenterX = (mx(face[234]) + mx(face[454])) * 0.5;
+      const faceWidth = Math.max(0.08, Math.abs(face[454].x - face[234].x));
+      const yawRatio = (mx(face[1]) - faceCenterX) / faceWidth;
+
+      let jawOpen = 0;
+      if (res.faceBlendshapes && res.faceBlendshapes.length > 0) {
+        const cat = res.faceBlendshapes[0].categories.find((c) => c.categoryName === 'jawOpen');
+        if (cat) jawOpen = cat.score;
+      }
+
+      if (!calDone) {
+        calSum.centerX += faceCenterX;
+        calSum.yaw += yawRatio;
+        calSum.mouth += jawOpen;
+        calCount++;
+        baseline = {
+          centerX: calSum.centerX / calCount,
+          yaw: calSum.yaw / calCount,
+          mouth: calSum.mouth / calCount
+        };
+        if (calCount >= CAL_TARGET) {
+          calDone = true;
+          steerFilter.reset();
+        }
+        headSteer = 0;
+        faceActionLabel.textContent = `🎯 ${calCount}/${CAL_TARGET}`;
+      } else {
+        const rawSteer = Math.max(-1.25, Math.min(1.25, (yawRatio - baseline.yaw) * 4.2 + (faceCenterX - baseline.centerX) * 2.2));
+        const filtered = steerFilter.filter(rawSteer, nowMs / 1000);
+        const deadzone = 0.045;
+        const absF = Math.abs(filtered);
+        const mapped = absF <= deadzone ? 0 : Math.sign(filtered) * ((absF - deadzone) / (1 - deadzone));
+        headSteer = Math.max(-1, Math.min(1, mapped));
+
+        const mouthDelta = jawOpen - baseline.mouth;
+        if (!mouthLatched && mouthDelta > 0.28) {
+          mouthLatched = true;
+          if ((nowMs / 1000) - lastMouthTriggerSec > 0.45) {
+            lastMouthTriggerSec = nowMs / 1000;
+            activateShield();
+          }
+        } else if (mouthLatched && mouthDelta < 0.16) {
+          mouthLatched = false;
+        }
+
+        faceActionLabel.textContent = mouthLatched ? '😮 护盾' : headSteer < -0.18 ? '◀ 左舵' : headSteer > 0.18 ? '▶ 右舵' : '🎯 回正';
+      }
+
+      // Draw facial contour & nose dot on PiP
+      const scalePip = w / side;
+      const mapPt = (pt) => ({ x: ((1 - pt.x) * vw - sx) * scalePip, y: (pt.y * vh - sy) * scalePip });
+      facePipCtx.save();
+      facePipCtx.strokeStyle = mouthLatched ? '#facc15' : '#22d3ee';
+      facePipCtx.lineWidth = 2;
+      facePipCtx.setLineDash([4, 4]);
+      facePipCtx.beginPath();
+      const p0 = mapPt(face[FACE_OVAL[0]]);
+      facePipCtx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < FACE_OVAL.length; i++) {
+        const p = mapPt(face[FACE_OVAL[i]]);
+        facePipCtx.lineTo(p.x, p.y);
+      }
+      facePipCtx.stroke();
+      const nose = mapPt(face[1]);
+      facePipCtx.fillStyle = mouthLatched ? '#facc15' : '#22d3ee';
+      facePipCtx.beginPath();
+      facePipCtx.arc(nose.x, nose.y, 4.5, 0, Math.PI * 2);
+      facePipCtx.fill();
+      facePipCtx.restore();
+    } else {
+      faceActionLabel.textContent = '👀 找人脸';
+    }
+  }
+  faceLoopRaf = requestAnimationFrame(faceLoop);
+}
+
+faceToggleBtn.addEventListener('click', () => {
+  sound.init();
+  if (faceModeEnabled) disableFaceControl();
+  else enableFaceControl();
+});
+const triggerRecenter = () => {
+  beginFaceCalibration();
+  showToast('🎯 头部零点基准已重新校准');
+};
+faceCalibrateBtn.addEventListener('click', triggerRecenter);
+facePipCanvas.addEventListener('click', triggerRecenter);
+pipToggleVisBtn.addEventListener('click', () => {
+  const collapsed = facePipCanvas.classList.toggle('collapsed');
+  pipToggleVisBtn.setAttribute('aria-pressed', String(collapsed));
+  pipToggleVisBtn.textContent = collapsed ? '展开' : '收起';
+});
+
+// --- 8. Physics Update & Canvas Rendering ---
+function lerpColor(c1, c2, t) {
+  const f = Math.max(0, Math.min(1, t));
+  const r = Math.round(c1[0] + (c2[0] - c1[0]) * f);
+  const g = Math.round(c1[1] + (c2[1] - c1[1]) * f);
+  const b = Math.round(c1[2] + (c2[2] - c1[2]) * f);
+  return `rgb(${r},${g},${b})`;
+}
+
+function update(dt) {
+  if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 36);
+
+  if (gameState === 'CALIBRATING') {
+    const stepDur = faceModeEnabled ? 0.75 : 0.5;
+    countdownTimer -= dt;
+    const digit = Math.max(1, Math.min(3, Math.ceil(countdownTimer / stepDur)));
+    if (digit < lastCountdownDigit) {
+      lastCountdownDigit = digit;
+      sound.playCountdown(false);
+    }
+    countdownNum.textContent = String(digit);
+    if (faceModeEnabled) {
+      countdownTip.textContent = `🎯 正在锚定零点姿态 (${Math.min(calCount, CAL_TARGET)}/${CAL_TARGET} 帧)`;
+      countdownSub.textContent = '保持当前舒适坐姿/躺姿正视屏幕即可';
+    } else {
+      countdownTip.textContent = '🚀 火箭引擎点火中...';
+      countdownSub.textContent = '单指拖动或按 ←/→、A/D 控制横向闪避';
+    }
+    if (Math.random() < 0.7) {
+      particles.push({
+        x: rocketX + (Math.random() - 0.5) * rocketWidth * 0.25,
+        y: rocketY + rocketHeight * 0.44,
+        vx: (Math.random() - 0.5) * 45,
+        vy: 75 + Math.random() * 80,
+        life: 0.4, maxLife: 0.4, r: 3 + Math.random() * 3,
+        color: Math.random() < 0.5 ? '#fb923c' : '#cbd5e1'
+      });
+    }
+    updateParticles(dt);
+    if (countdownTimer <= 0) launchPlay();
+    return;
+  }
+
+  if (gameState !== 'PLAYING') {
+    updateParticles(dt);
+    return;
+  }
+
+  // Keyboard continuous steering support when not in face mode
+  if (!faceModeEnabled) {
+    const keyDir = (keysHeld.has('right') ? 1 : 0) - (keysHeld.has('left') ? 1 : 0);
+    if (keyDir !== 0) {
+      touchSteer = Math.max(-1, Math.min(1, touchSteer + keyDir * dt * 1.9));
+    }
+  }
+
+  const baseSpd = baseSpeed();
+  const maxSpd = maxSpeed();
+  const progress = Math.min(1, altitude / (faceModeEnabled ? 4500 : 3200));
+  worldSpeed = baseSpd + (maxSpd - baseSpd) * Math.pow(progress, 0.75);
+  altitude += (worldSpeed / Math.max(640, height)) * 120 * dt;
+  score = Math.floor(altitude) + stars * 15 + grazes * 25;
+
+  const newZone = altitude < 750 ? 0 : altitude < 1900 ? 1 : altitude < 3600 ? 2 : 3;
+  if (newZone > currentZone) {
+    currentZone = newZone;
+    sound.playZoneUp();
+    zoneBannerText = newZone === 1 ? '🌅 平流层晚霞 · 加速巡航' : newZone === 2 ? '🌌 中间层极光 · 小心陨石' : '🪐 深邃星海 · 极限闪避';
+    zoneBannerTimer = 2.5;
+  }
+  if (zoneBannerTimer > 0) zoneBannerTimer = Math.max(0, zoneBannerTimer - dt);
+
+  if (shieldActive > 0) shieldActive = Math.max(0, shieldActive - dt);
+  else shieldCharge = Math.min(100, shieldCharge + dt * 6.5);
+
+  activeSteer = faceModeEnabled ? headSteer : touchSteer;
+  const margin = rocketWidth * 0.56;
+  const targetX = Math.max(margin, Math.min(width - margin, width * (0.5 + activeSteer * 0.45)));
+  const prevX = rocketX;
+  const followAlpha = 1 - Math.exp(-(faceModeEnabled ? 13.5 : 18) * dt);
+  rocketX += (targetX - rocketX) * followAlpha;
+
+  const vx = (rocketX - prevX) / dt;
+  const targetRoll = Math.max(-22, Math.min(22, (vx / (width * 0.85)) * 24 + activeSteer * 5));
+  rocketRoll += (targetRoll - rocketRoll) * (1 - Math.exp(-12 * dt));
+
+  const rad = (rocketRoll * Math.PI) / 180;
+  const exX = rocketX - Math.sin(rad) * rocketHeight * 0.46;
+  const exY = rocketY + Math.cos(rad) * rocketHeight * 0.46;
+  for (let i = 0; i < 2; i++) {
+    particles.push({
+      x: exX + (Math.random() - 0.5) * rocketWidth * 0.16,
+      y: exY,
+      vx: -Math.sin(rad) * 110 + (Math.random() - 0.5) * 55,
+      vy: Math.cos(rad) * (160 + worldSpeed * 0.25),
+      life: 0.26, maxLife: 0.26, r: 2.5 + Math.random() * 3,
+      color: shieldActive > 0 ? '#22d3ee' : Math.random() < 0.45 ? '#fef08a' : '#f97316'
+    });
+  }
+
+  for (const s of bgStars) {
+    s.y += (worldSpeed * s.spd * 0.45 / height) * dt;
+    if (s.y > 1.05) { s.y = -0.05; s.x = Math.random(); }
+  }
+  for (const c of bgClouds) {
+    c.y += (worldSpeed * c.spd / height) * dt;
+    if (c.y > 1.15) { c.y = -0.15; c.x = Math.random(); }
+  }
+
+  distanceToWave -= worldSpeed * dt;
+  if (distanceToWave <= 0) {
+    spawnWave(-rocketHeight);
+    distanceToWave = (faceModeEnabled ? height * 0.34 : height * 0.29) + (worldSpeed - baseSpd) * 0.22;
+  }
+
+  const coreR = rocketWidth * 0.27;
+  const grazeR = rocketWidth * 0.80;
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const ob = obstacles[i];
+    if (ob.kind === 'WARNING_METEOR' && ob.warningTimer > 0) {
+      ob.warningTimer -= dt;
+      continue;
+    }
+    ob.y += worldSpeed * ob.speedScale * dt;
+    ob.rot += ob.rotSpd * dt;
+    if (ob.kind === 'SATELLITE') {
+      ob.x += ob.vx * dt;
+      if (ob.x <= ob.minX) { ob.x = ob.minX; ob.vx = Math.abs(ob.vx); }
+      else if (ob.x >= ob.maxX) { ob.x = ob.maxX; ob.vx = -Math.abs(ob.vx); }
+    }
+
+    const dist = Math.hypot(ob.x - rocketX, ob.y - rocketY);
+    if (dist < coreR + ob.r * 0.84) {
+      if (shieldActive > 0) {
+        score += 40;
+        sound.playShatter();
+        spawnBurst(ob.x, ob.y, '#22d3ee', 14);
+        popups.push({ x: ob.x, y: ob.y, text: '🛡️ +40', color: '#67e8f9', life: 0.9 });
+        obstacles.splice(i, 1);
+        continue;
+      }
+      triggerGameOver();
+      return;
+    }
+
+    if (!ob.grazed && dist < grazeR + ob.r * 0.85) {
+      ob.grazed = true;
+      grazes++;
+      shieldCharge = Math.min(100, shieldCharge + 14);
+      sound.playGraze();
+      popups.push({ x: rocketX, y: rocketY - rocketHeight * 0.6, text: '⚡ 擦边 +25', color: '#facc15', life: 0.85 });
+      spawnBurst((rocketX + ob.x) * 0.5, (rocketY + ob.y) * 0.5, '#facc15', 7);
+    }
+    if (ob.y > height + ob.r * 2.5) obstacles.splice(i, 1);
+  }
+
+  const pickR = rocketWidth * 0.56;
+  for (let i = collectibles.length - 1; i >= 0; i--) {
+    const col = collectibles[i];
+    col.y += worldSpeed * dt;
+    col.phase += dt * 5;
+    if (shieldActive > 0) {
+      const dx = rocketX - col.x;
+      const dy = rocketY - col.y;
+      const d = Math.hypot(dx, dy);
+      if (d < width * 0.48 && d > 1) {
+        col.x += (dx / d) * width * 1.15 * dt;
+        col.y += (dy / d) * width * 1.15 * dt;
+      }
+    }
+    if (Math.hypot(col.x - rocketX, col.y - rocketY) < pickR + col.r) {
+      if (col.kind === 'FUEL') {
+        stars += 2;
+        shieldCharge = Math.min(100, shieldCharge + 30);
+        sound.playFuel();
+        popups.push({ x: col.x, y: col.y, text: '🔋 燃料 +30', color: '#4ade80', life: 0.9 });
+        spawnBurst(col.x, col.y, '#4ade80', 10);
+      } else {
+        stars++;
+        combo++;
+        shieldCharge = Math.min(100, shieldCharge + 8);
+        sound.playStar(combo);
+        popups.push({ x: col.x, y: col.y, text: '★ +15', color: '#fef08a', life: 0.75 });
+        spawnBurst(col.x, col.y, '#facc15', 7);
+      }
+      collectibles.splice(i, 1);
+      continue;
+    }
+    if (col.y > height + 50) collectibles.splice(i, 1);
+  }
+
+  updateParticles(dt);
+
+  // Sync HUD DOM
+  altDisplay.textContent = `${Math.floor(altitude)}m`;
+  const zNames = ['☁ 对流层', '🌅 平流层', '🌌 极光层', '🪐 深空'];
+  zoneMeta.textContent = `${zNames[currentZone]} · ${(worldSpeed / baseSpd).toFixed(1)}x`;
+  starsDisplay.textContent = `★ ${stars} · ⚡ ${grazes}`;
+  steerKnob.style.insetInlineStart = `${50 + activeSteer * 45}%`;
+
+  const ready = shieldCharge >= 100;
+  shieldBtn.classList.toggle('ready', ready || shieldActive > 0);
+  shieldFill.style.setProperty('--charge', shieldActive > 0 ? '100%' : `${Math.round(shieldCharge)}%`);
+  shieldBtnText.textContent = shieldActive > 0
+    ? `🛡️ 护盾激活 ${shieldActive.toFixed(1)}s`
+    : ready
+      ? (faceModeEnabled ? '😮 张嘴 / 空格开启护盾' : '🛡️ 点击 / 空格开启护盾')
+      : `🔋 护盾充能 ${Math.floor(shieldCharge)}%`;
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const pop = popups[i];
+    pop.y -= 44 * dt;
+    pop.life -= dt;
+    if (pop.life <= 0) popups.splice(i, 1);
+  }
+}
+
+function draw() {
+  if (!width || !height) return;
+  ctx.save();
+  if (screenShake > 0) {
+    ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+  }
+
+  // Atmospheric gradient by altitude
+  let topC, botC, starA = 0, cloudA = 0;
+  if (altitude < 750) {
+    const t = altitude / 750;
+    topC = lerpColor([14, 116, 204], [30, 58, 138], t);
+    botC = lerpColor([125, 211, 252], [251, 146, 60], t);
+    starA = t * 0.28;
+    cloudA = 1 - t * 0.35;
+  } else if (altitude < 1900) {
+    const t = (altitude - 750) / 1150;
+    topC = lerpColor([30, 58, 138], [15, 23, 42], t);
+    botC = lerpColor([251, 146, 60], [109, 40, 217], t);
+    starA = 0.28 + t * 0.55;
+    cloudA = (1 - t) * 0.65;
+  } else if (altitude < 3600) {
+    const t = (altitude - 1900) / 1700;
+    topC = lerpColor([15, 23, 42], [3, 7, 18], t);
+    botC = lerpColor([109, 40, 217], [17, 24, 39], t);
+    starA = 0.83 + t * 0.17;
+  } else {
+    topC = 'rgb(3,7,18)';
+    botC = 'rgb(12,18,38)';
+    starA = 1;
+  }
+
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+  skyGrad.addColorStop(0, topC);
+  skyGrad.addColorStop(1, botC);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, width, height);
+
+  if (starA > 0.02) {
+    for (const s of bgStars) {
+      const tw = 0.6 + 0.4 * Math.sin(s.ph + altitude * 0.03);
+      ctx.fillStyle = `rgba(241, 245, 249, ${starA * tw})`;
+      ctx.beginPath();
+      ctx.arc(s.x * width, s.y * height, s.s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (cloudA > 0.02) {
+    for (const c of bgClouds) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${c.a * cloudA})`;
+      const cx = c.x * width, cy = c.y * height, cw = c.w * width, ch = cw * 0.35;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, cw * 0.5, ch * 0.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy - ch * 0.25, cw * 0.3, ch * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Launchpad at ground level
+  if (altitude < 120) {
+    const padTop = height * 0.88 + (altitude / 120) * height * 0.3;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, padTop, width, height - padTop + 100);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(width * 0.25, padTop, width * 0.5, 5);
+  }
+
+  // Red-line Warning Rails
+  for (const ob of obstacles) {
+    if (ob.kind === 'WARNING_METEOR' && ob.warningTimer > 0) {
+      const flash = 0.45 + 0.55 * Math.abs(Math.sin(ob.warningTimer * 18));
+      ctx.fillStyle = `rgba(239, 68, 68, ${flash * 0.16})`;
+      ctx.fillRect(ob.x - ob.r, 0, ob.r * 2, height);
+      ctx.save();
+      ctx.strokeStyle = `rgba(248, 113, 113, ${flash * 0.85})`;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath();
+      ctx.moveTo(ob.x, 0);
+      ctx.lineTo(ob.x, height);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(ob.x, 140, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', ob.x, 145);
+    }
+  }
+
+  // Collectibles
+  for (const col of collectibles) {
+    const r = col.r * (1 + 0.12 * Math.sin(col.phase));
+    if (col.kind === 'FUEL') {
+      ctx.fillStyle = 'rgba(74, 222, 128, 0.28)';
+      ctx.beginPath();
+      ctx.arc(col.x, col.y, r * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.roundRect(col.x - r * 0.7, col.y - r, r * 1.4, r * 2, 5);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.26)';
+      ctx.beginPath();
+      ctx.arc(col.x, col.y, r * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(col.x, col.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fef9c3';
+      ctx.beginPath();
+      ctx.arc(col.x, col.y, r * 0.58, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Obstacles
+  for (const ob of obstacles) {
+    if (ob.kind === 'WARNING_METEOR' && ob.warningTimer > 0) continue;
+    ctx.save();
+    ctx.translate(ob.x, ob.y);
+    ctx.rotate(ob.rot);
+    if (ob.kind === 'ASTEROID') {
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const j = i % 2 === 0 ? 1 : 0.78;
+        const px = Math.cos(a) * ob.r * j;
+        const py = Math.sin(a) * ob.r * j;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#64748b';
+      ctx.fill();
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#334155';
+      ctx.beginPath();
+      ctx.arc(-ob.r * 0.25, -ob.r * 0.2, ob.r * 0.22, 0, Math.PI * 2);
+      ctx.arc(ob.r * 0.28, ob.r * 0.22, ob.r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (ob.kind === 'SATELLITE') {
+      ctx.fillStyle = '#2563eb';
+      ctx.fillRect(-ob.r * 1.2, -ob.r * 0.24, ob.r * 0.76, ob.r * 0.48);
+      ctx.fillRect(ob.r * 0.44, -ob.r * 0.24, ob.r * 0.76, ob.r * 0.48);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.roundRect(-ob.r * 0.46, -ob.r * 0.48, ob.r * 0.92, ob.r * 0.96, 5);
+      ctx.fill();
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath();
+      ctx.arc(0, -ob.r * 0.16, ob.r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(249, 115, 22, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(0, -ob.r * 1.1, ob.r * 0.9, ob.r * 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(0, 0, ob.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(0, 0, ob.r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Rocket
+  ctx.save();
+  ctx.translate(rocketX, rocketY);
+  ctx.rotate((rocketRoll * Math.PI) / 180);
+  const w = rocketWidth, h = rocketHeight;
+  if (shieldActive > 0) {
+    const pulse = 1 + 0.08 * Math.sin(shieldActive * 14);
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.22)';
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, w * 0.92 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const fl = 0.85 + Math.random() * 0.35;
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.19, h * 0.38);
+  ctx.lineTo(0, h * (0.38 + 0.32 * fl));
+  ctx.lineTo(w * 0.19, h * 0.38);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.24, h * 0.14);
+  ctx.lineTo(-w * 0.48, h * 0.4);
+  ctx.lineTo(-w * 0.22, h * 0.36);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(w * 0.24, h * 0.14);
+  ctx.lineTo(w * 0.48, h * 0.4);
+  ctx.lineTo(w * 0.22, h * 0.36);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.beginPath();
+  ctx.moveTo(0, -h * 0.5);
+  ctx.bezierCurveTo(w * 0.28, -h * 0.24, w * 0.3, h * 0.1, w * 0.24, h * 0.38);
+  ctx.lineTo(-w * 0.24, h * 0.38);
+  ctx.bezierCurveTo(-w * 0.3, h * 0.1, -w * 0.28, -h * 0.24, 0, -h * 0.5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(-w * 0.4, -h * 0.52, w * 0.8, h * 0.32);
+  ctx.restore();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.04, w * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#22d3ee';
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.04, w * 0.115, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Zone banner & floating popups
+  if (zoneBannerTimer > 0) {
+    ctx.globalAlpha = Math.min(1, zoneBannerTimer);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(width * 0.14, height * 0.22, width * 0.72, 36, 18);
+    ctx.fill();
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(zoneBannerText, width * 0.5, height * 0.22 + 23);
+    ctx.globalAlpha = 1;
+  }
+
+  for (const pop of popups) {
+    ctx.globalAlpha = Math.max(0, pop.life);
+    ctx.fillStyle = pop.color;
+    ctx.font = 'bold 15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(pop.text, pop.x, pop.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function gameLoop(ts) {
+  if (!lastFrameMs) lastFrameMs = ts;
+  const dt = Math.max(0.004, Math.min(0.05, (ts - lastFrameMs) / 1000));
+  lastFrameMs = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+startDialog.showModal();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
