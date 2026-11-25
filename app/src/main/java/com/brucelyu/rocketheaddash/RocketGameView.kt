@@ -22,6 +22,15 @@ class RocketGameView @JvmOverloads constructor(
 
     enum class GameState { START, CALIBRATING, PLAYING, GAMEOVER }
 
+    data class RunSummary(
+        val score: Int,
+        val altitude: Int,
+        val stars: Int,
+        val grazes: Int,
+        val speedMultiplier: Float,
+        val controlMode: String
+    )
+
     private var gameThread: Thread? = null
     @Volatile
     private var isRunning = false
@@ -34,6 +43,7 @@ class RocketGameView @JvmOverloads constructor(
     var onStartCalibrationRequested: (() -> Unit)? = null
     var onFinalizeCalibrationRequested: (() -> Unit)? = null
     var onGameStateChanged: ((GameState) -> Unit)? = null
+    var onGameOverListener: ((RunSummary) -> Unit)? = null
 
     @Volatile
     var isFaceControlEnabled: Boolean = false
@@ -317,7 +327,18 @@ class RocketGameView @JvmOverloads constructor(
             bestAltitude = altInt
             prefs.edit().putInt("best_altitude", bestAltitude).apply()
         }
-        post { onGameStateChanged?.invoke(GameState.GAMEOVER) }
+        val summary = RunSummary(
+            score = score,
+            altitude = altInt,
+            stars = starsCollected,
+            grazes = grazesCount,
+            speedMultiplier = peakSpeedMult,
+            controlMode = if (isFaceControlEnabled) "face" else "touch"
+        )
+        post {
+            onGameStateChanged?.invoke(GameState.GAMEOVER)
+            onGameOverListener?.invoke(summary)
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

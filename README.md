@@ -28,6 +28,9 @@
 5. **无素材程序化音效 (`SoundManager.kt`)**
    - 纯 PCM 合成倒计时、星币/燃料拾取、擦边火花、护盾开启/击碎与大气层升空音效。
 
+6. **战绩上传与云端榜单 (`brucelyu.cc`)**
+   - Android 端（[MainActivity.kt](app/src/main/java/com/brucelyu/rocketheaddash/MainActivity.kt)）与 Web 端（[preview/index.html](preview/index.html)）均支持在结算时填写玩家昵称并上传战绩至 `https://www.brucelyu.cc/api/rocket-dash/records`（榜单入口：`https://www.brucelyu.cc/rocket-dash`），包含积分、高度、星币、擦边次数、极速倍率、操控模式与时间戳。
+
 ---
 
 ## 快速运行与验证

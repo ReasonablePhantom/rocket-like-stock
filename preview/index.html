@@ -418,13 +418,14 @@
     /* Native Modal Dialogs */
     dialog.game-modal {
       margin: auto;
-      inline-size: min(90vw, 390px);
-      max-block-size: 86dvh;
+      inline-size: min(92vw, 396px);
+      max-block-size: 88dvh;
+      overflow-y: auto;
       border: 1px solid rgba(56, 189, 248, 0.35);
       border-radius: 22px;
       background: rgba(7, 11, 25, 0.94);
       color: #f8fafc;
-      padding: 24px 20px;
+      padding: 22px 18px;
       text-align: center;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
     }
@@ -516,6 +517,114 @@
     }
     .stat-label { color: #94a3b8; }
     .stat-val { font-weight: 800; color: #fff; }
+
+    /* Upload Record Card (brucelyu.cc) */
+    .upload-card {
+      inline-size: 100%;
+      background: rgba(249, 115, 22, 0.08);
+      border: 1.5px solid rgba(251, 146, 60, 0.38);
+      border-radius: 16px;
+      padding: 12px 14px;
+      text-align: start;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .upload-heading {
+      font-size: 13px;
+      font-weight: 800;
+      color: #fed7aa;
+    }
+    .upload-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .upload-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #cbd5e1;
+    }
+    .upload-input {
+      inline-size: 100%;
+      min-block-size: 44px;
+      font: inherit;
+      font-size: max(1rem, 1em);
+      font-weight: 600;
+      color: #fff;
+      background: rgba(2, 6, 23, 0.65);
+      border: 1.5px solid rgba(148, 163, 184, 0.45);
+      border-radius: 10px;
+      padding: 8px 12px;
+      transition: border-color 140ms ease-out;
+    }
+    .upload-input:focus-visible {
+      outline: 2.5px solid var(--cyan-soft);
+      outline-offset: 2px;
+      border-color: var(--cyan);
+    }
+    .upload-meta {
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .upload-btn {
+      inline-size: 100%;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .upload-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+    .upload-status {
+      font-size: 12px;
+      font-weight: 700;
+      min-block-size: 18px;
+      text-align: center;
+      color: #cbd5e1;
+    }
+    .upload-status.success { color: #4ade80; }
+    .upload-status.error { color: #f87171; }
+    .upload-status.loading { color: #7dd3fc; }
+    .modal-btn-row {
+      inline-size: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-btn-row .primary-cta {
+      flex: 1 1 150px;
+      max-inline-size: none;
+    }
+    .leaderboard-link-btn {
+      flex: 0 1 auto;
+      min-block-size: var(--target-size);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 11px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .leaderboard-link-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
   </style>
 </head>
 <body>
@@ -612,8 +721,41 @@
         <div class="stat-row"><span class="stat-label">星币 / 擦边</span><span class="stat-val" id="finalStars" style="color: #facc15;">★ 0 / ⚡ 0</span></div>
         <div class="stat-row" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;"><span class="stat-label">历史最佳</span><span class="stat-val" id="bestScore" style="color: #4ade80;">0</span></div>
       </div>
-      <form method="dialog" style="width: 100%; display: flex; justify-content: center;">
+
+      <form class="upload-card" id="uploadForm" action="https://www.brucelyu.cc/api/rocket-dash/records" method="POST" aria-labelledby="uploadHeading">
+        <h2 class="upload-heading" id="uploadHeading">🏆 上传战绩到 brucelyu.cc 排行榜</h2>
+        <div class="upload-field">
+          <label class="upload-label" for="playerNameInput">玩家昵称（留空则显示“神秘航天员”）</label>
+          <input
+            type="text"
+            id="playerNameInput"
+            name="playerName"
+            class="upload-input"
+            placeholder="例如: Bruce"
+            maxlength="20"
+            autocomplete="nickname"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            enterkeyhint="send"
+          />
+        </div>
+        <div class="upload-meta">
+          <span>🕒 记录时间：</span><span id="recordDateTimeDisplay">--</span>
+        </div>
+        <button class="upload-btn" id="uploadBtn" type="submit">🚀 确认上传到 brucelyu.cc</button>
+        <div class="upload-status" id="uploadStatus" role="status" aria-live="polite"></div>
+      </form>
+
+      <form method="dialog" class="modal-btn-row">
         <button class="primary-cta" id="restartBtn" value="retry" autofocus>🚀 再次发射</button>
+        <a
+          href="https://www.brucelyu.cc/rocket-dash"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="leaderboard-link-btn"
+          id="viewLeaderboardLink"
+        >📊 查看榜单</a>
       </form>
     </dialog>
   </main>
@@ -919,6 +1061,10 @@ let distanceToWave = 140;
 let screenShake = 0;
 let zoneBannerText = '';
 let zoneBannerTimer = 0;
+let peakSpeedMult = 1.0;
+let lastRunDate = '';
+let lastRunTime = '';
+let lastRunTimestamp = '';
 
 let rocketWidth = 46;
 let rocketHeight = 76;
@@ -1035,6 +1181,7 @@ function startLaunchSequence() {
 
   countdownTimer = faceModeEnabled ? 2.25 : 1.5;
   lastCountdownDigit = 4;
+  peakSpeedMult = 1.0;
 
   if (faceModeEnabled) {
     beginFaceCalibration();
@@ -1114,9 +1261,110 @@ function triggerGameOver() {
   document.getElementById('finalAlt').textContent = `${Math.floor(altitude)}m`;
   document.getElementById('finalStars').textContent = `★ ${stars} / ⚡ ${grazes}`;
   document.getElementById('bestScore').textContent = String(bestScore);
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  lastRunDate = `${y}-${m}-${d}`;
+  lastRunTime = `${hh}:${mm}:${ss}`;
+  lastRunTimestamp = now.toISOString();
+  document.getElementById('recordDateTimeDisplay').textContent = `${lastRunDate} ${lastRunTime}`;
+
+  const savedName = localStorage.getItem('rocket_dash_player_name') || '';
+  document.getElementById('playerNameInput').value = savedName;
+
+  const uploadBtn = document.getElementById('uploadBtn');
+  uploadBtn.disabled = false;
+  uploadBtn.textContent = '🚀 确认上传到 brucelyu.cc';
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.className = 'upload-status';
+  statusEl.textContent = '';
+
   gameOverDialog.showModal();
   announce(`任务结束，本次积分 ${score}`);
 }
+
+const uploadForm = document.getElementById('uploadForm');
+const playerNameInput = document.getElementById('playerNameInput');
+
+playerNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.isComposing) {
+    e.preventDefault();
+  }
+});
+
+async function uploadRecordToBruceLyu() {
+  const uploadBtn = document.getElementById('uploadBtn');
+  const statusEl = document.getElementById('uploadStatus');
+  const playerName = playerNameInput.value.trim() || '神秘航天员';
+  localStorage.setItem('rocket_dash_player_name', playerName);
+
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '⏳ 正在上传中...';
+  statusEl.className = 'upload-status loading';
+  statusEl.textContent = '正在同步战绩至 brucelyu.cc...';
+
+  const payload = {
+    playerName,
+    score,
+    altitude: Math.floor(altitude),
+    stars,
+    grazes,
+    speedMultiplier: Number(peakSpeedMult.toFixed(1)),
+    controlMode: faceModeEnabled ? 'face' : 'touch',
+    gameDate: lastRunDate,
+    gameTime: lastRunTime,
+    playedAt: lastRunTimestamp
+  };
+
+  const endpoints = [
+    'https://www.brucelyu.cc/api/rocket-dash/records',
+    'https://brucelyu.cc/api/rocket-dash/records'
+  ];
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    endpoints.unshift('http://localhost:3000/api/rocket-dash/records');
+  }
+
+  let success = false;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        success = true;
+        break;
+      }
+    } catch (_) {
+      // Try fallback endpoint
+    }
+  }
+
+  if (success) {
+    statusEl.className = 'upload-status success';
+    statusEl.textContent = '🎉 战绩上传成功！已登入全球榜单！';
+    uploadBtn.textContent = '✅ 已上传';
+  } else {
+    const backups = JSON.parse(localStorage.getItem('rocket_dash_offline_records') || '[]');
+    backups.push(payload);
+    localStorage.setItem('rocket_dash_offline_records', JSON.stringify(backups));
+    statusEl.className = 'upload-status error';
+    statusEl.textContent = '⚠️ 上传未完成（已暂存本地记录），可稍后重试';
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = '🔄 重新尝试上传';
+  }
+}
+
+uploadForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  uploadRecordToBruceLyu();
+});
 
 // --- 6. Input: Single-Finger Pointer Drag & Keyboard ---
 let pointerActive = false;
@@ -1145,6 +1393,7 @@ canvas.addEventListener('lostpointercapture', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.closest('input, textarea')) return;
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
     keysHeld.add('left');
   } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
@@ -1485,6 +1734,7 @@ function update(dt) {
   const maxSpd = maxSpeed();
   const progress = Math.min(1, altitude / (faceModeEnabled ? 4500 : 3200));
   worldSpeed = baseSpd + (maxSpd - baseSpd) * Math.pow(progress, 0.75);
+  peakSpeedMult = Math.max(peakSpeedMult, worldSpeed / baseSpd);
   altitude += (worldSpeed / Math.max(640, height)) * 120 * dt;
   score = Math.floor(altitude) + stars * 15 + grazes * 25;
 
